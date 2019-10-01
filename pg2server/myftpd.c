@@ -24,7 +24,8 @@
 
 #define MAX_BUFFER_SIZE 4096
 
-void list_handler(int, struct sockaddr_in);
+void list_handler(int);
+void mkdir_handler(int);
 
 int send_short(short value, int socket) {
     int len;
@@ -172,12 +173,13 @@ int main(int argc, char* argv[]) {
       // LIST: List
       else if (strcmp(buf, "LIST") == 0) {
         printf("Received LIST command\n");
-        list_handler(clientSocket, clientAddr);
+        list_handler(clientSocket);
 
       }
       // MKDR: Make Directory
       else if (strcmp(buf, "MKDR") == 0) {
         printf("Received MKDIR command\n");
+        mkdir_handler(clientSocket);
 
       }
       // RMDR: Remove Directory
@@ -226,7 +228,7 @@ int main(int argc, char* argv[]) {
  *
  * Obtains listing of directory and sends back to client
 */
-void list_handler(int clientSocket, struct sockaddr_in clientAddr){
+void list_handler(int clientSocket){
   char buffer[MAX_BUFFER_SIZE];
   char* listing;
   int totalBytesRead = 0;
@@ -264,5 +266,9 @@ void list_handler(int clientSocket, struct sockaddr_in clientAddr){
   pclose(fp);
 
   return;
+
+}
+
+void mkdir_handler(int clientSocket) {
 
 }

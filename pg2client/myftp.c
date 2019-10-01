@@ -133,9 +133,9 @@ int main(int argc, char *argv[]) {
 
 	  // send the operation to the server
 	  // int sent = sendto(clientSocket, op, 50, 0, (const struct sockaddr *)&servaddr, sizeof(servaddr));
-		int sent = send_buffer(clientSocket, op, strlen(op));
+	  //int sent = send_buffer(clientSocket, op, strlen(op));
 
-	  printf("Sent the message, %d characters\n", sent);
+	  //printf("Sent the message, %d characters\n", sent);
 
 		// DNLD: Download
 		if (strcmp(op, "DNLD") == 0) {
@@ -149,6 +149,8 @@ int main(int argc, char *argv[]) {
 		// LIST: List
 		else if (strcmp(op, "LIST") == 0) {
 
+			int sent = send_buffer(clientSocket, op, strlen(op));
+			printf("Sent the message, %d characters\n", sent);
 			//printf("Sent LIST command\n");
 
 			// Get size of directory
@@ -171,10 +173,30 @@ int main(int argc, char *argv[]) {
 			}
 			fflush(stdout);
 		}
-		// MKDR: Make Directory
-		else if (strcmp(op, "MKDR") == 0) {
+		// MKDR: Make Directorys
+		else if (strstr(op, "MKDR ") == 0) {
 			printf("Sent MKDIR command\n");
+			char* buf = "MKDR";
+			int sent = send_buffer(clientSocket, buf, strlen(buf));
+			printf("Sent the message, %d characters\n", sent);
 
+			char* dir_name = op + 6; //get directory name
+			int dir_length = strlen(dir_name);
+			//printf("%s %d\n", dir_name, dir_length);
+
+			sent = send_int(dir_length, clientSocket); //send size
+			sent = send_buffer(clientSocket, dir_name, strlen(dir_name)); //send name
+
+			int status = receive_int(clientSocket);
+			if (status == -2) {
+				perror("ERROR: The directory already exists on the server.\n");
+			}
+			else if (status == -1) {
+				perror("ERROR: Making directory.\n");
+			}
+			else {
+				printf("The directory was successfully made!\n");
+			}
 		}
 		// RMDR: Remove Directory
 		else if (strcmp(op, "RMDR") == 0) {
@@ -188,7 +210,8 @@ int main(int argc, char *argv[]) {
 		}
 		// CRFL: Create File
 		else if (strcmp(op, "CRFL") == 0) {
-			printf("Sent CRFL command\n");
+			//printf("Sent CRFL command\n");
+
 
 
 		}
