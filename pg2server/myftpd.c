@@ -26,6 +26,27 @@
 
 void list_handler(int, struct sockaddr_in);
 
+int send_short(short value, int socket) {
+    int len;
+    short temp = htonl(value);
+    if ((len = write(socket, &temp, sizeof(temp))) == -1) {
+        perror("ERROR: Client Send");
+        exit(1);
+    }
+}
+
+int receive_short(int s) {
+  int buffer;
+  int len;
+  if ((len = read(s, &buffer, sizeof(buffer))) == -1) {
+      perror("ERROR: Client Receive");
+      exit(1);
+  }
+
+  short temp = ntohl(buffer);
+  return temp;
+}
+
 int send_buffer(int s, char* buffer, int size) {
     int len;
     if ((len = write(s, buffer, size)) == -1) {
@@ -45,7 +66,7 @@ int receive_buffer(int s, char* buffer, int size) {
 }
 
 int send_int(int value, int socket) {
-	int len;
+	  int len;
     int temp = htonl(value);
     if ((len = write(socket, &temp, sizeof(temp))) == -1) {
         perror("ERROR: Client Send");
