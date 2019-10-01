@@ -149,19 +149,20 @@ int main(int argc, char *argv[]) {
 		// LIST: List
 		else if (strcmp(op, "LIST") == 0) {
 
-			printf("Sent LIST command\n");
+			//printf("Sent LIST command\n");
 
 			// Get size of directory
 			int directorySize = receive_int(clientSocket);
-			printf("Size of directory: %d\n", directorySize);
+			//printf("Size of directory: %d\n", directorySize);
 
 			// Recieve listing
 			int bytesRecvd = 0;
 			while(bytesRecvd < directorySize) {
 				memset(&messageBuffer, 0, sizeof(messageBuffer));
 				bytesRecvd += receive_buffer(clientSocket, messageBuffer, sizeof(messageBuffer));
-				printf("Bytes received: %d\n", bytesRecvd);
-				printf("Msg buffer: %s\n", messageBuffer);
+				//printf("Bytes received: %d\n", bytesRecvd);
+				//printf("Msg buffer: %s\n", messageBuffer);
+				printf("%s\n", messageBuffer);
 
 				// Escape reading loop if its empty or error
 				if (bytesRecvd <= 0){

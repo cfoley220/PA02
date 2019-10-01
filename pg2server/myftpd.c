@@ -241,7 +241,7 @@ void list_handler(int clientSocket, struct sockaddr_in clientAddr){
   while((bytesRead = fread(buffer, sizeof(char), sizeof(buffer)-1, fp)) > 0) {
     totalBytesRead += bytesRead;
   }
-  printf("Total bytes of directory: %d\n", totalBytesRead);
+  //printf("Total bytes of directory: %d\n", totalBytesRead);
 
   // Send size of directory
   send_int(totalBytesRead, clientSocket);
@@ -253,12 +253,12 @@ void list_handler(int clientSocket, struct sockaddr_in clientAddr){
   bytesRead = fread(directoryListing, sizeof(char), sizeof(directoryListing), fp);
   int len;
 
-  printf("directory listing:\n %s\n", directoryListing);
+  //printf("directory listing:\n %s\n", directoryListing);
   len = send_buffer(clientSocket, directoryListing, sizeof(directoryListing));
 
-  printf("\n");
+  //printf("\n");
 
-  printf("total bytes: %d\n", totalBytesRead);
+  //printf("total bytes: %d\n", totalBytesRead);
 
 
   pclose(fp);
