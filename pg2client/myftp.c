@@ -32,6 +32,8 @@ int send_short(short value, int socket)
 		perror("ERROR: Client Send");
 		exit(1);
 	}
+
+	return len;
 }
 
 int receive_short(int s) {
@@ -71,6 +73,8 @@ int send_int(int value, int s) {
         perror("ERROR: Client Send");
         exit(1);
     }
+
+	return len;
 }
 
 int receive_int(int s) {
@@ -107,7 +111,7 @@ int main(int argc, char *argv[]) {
   servaddr.sin_port = htons(41030);
 	// servaddr.sin_port = htons(41015);
 
-	char messageBuffer[MAX_BUFFER_SIZE];
+  char messageBuffer[MAX_BUFFER_SIZE];
 
   // connect
   if (connect(clientSocket, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0){
@@ -129,7 +133,7 @@ int main(int argc, char *argv[]) {
 		// get rid of the endline character
 		op[strlen(op)-1] = '\0';
 
-	  printf("Sending the message\n");
+	  //printf("Sending the message\n");
 
 	  // send the operation to the server
 	  // int sent = sendto(clientSocket, op, 50, 0, (const struct sockaddr *)&servaddr, sizeof(servaddr));
@@ -173,16 +177,16 @@ int main(int argc, char *argv[]) {
 			}
 			fflush(stdout);
 		}
-		// MKDR: Make Directorys
-		else if (strstr(op, "MKDR ") == 0) {
-			printf("Sent MKDIR command\n");
-			char* buf = "MKDR";
-			int sent = send_buffer(clientSocket, buf, strlen(buf));
+		// MKDR: Make Directories
+		else if (strstr(op, "MKDR ") != 0) {
+			printf("Sent MKDR command\n");
+			char* command = "MKDR";
+			int sent = send_buffer(clientSocket, command, strlen(command));
 			printf("Sent the message, %d characters\n", sent);
 
-			char* dir_name = op + 6; //get directory name
+			char* dir_name = op + 5; //get directory name
 			int dir_length = strlen(dir_name);
-			//printf("%s %d\n", dir_name, dir_length);
+			printf("%s %d\n", dir_name, dir_length);
 
 			sent = send_int(dir_length, clientSocket); //send size
 			sent = send_buffer(clientSocket, dir_name, strlen(dir_name)); //send name

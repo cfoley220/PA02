@@ -15,11 +15,13 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <unistd.h>
 
 
 #define MAX_BUFFER_SIZE 4096
@@ -34,6 +36,8 @@ int send_short(short value, int socket) {
         perror("ERROR: Client Send");
         exit(1);
     }
+
+    return len;
 }
 
 int receive_short(int s) {
@@ -73,9 +77,12 @@ int send_int(int value, int socket) {
         perror("ERROR: Client Send");
         exit(1);
     }
+
+    return len;
 }
 
 int receive_int(int s) {
+    printf("IN FUNCTION\n");
     int buffer;
     int len;
     if ((len = read(s, &buffer, sizeof(buffer))) == -1) {
@@ -84,6 +91,7 @@ int receive_int(int s) {
     }
 
     int temp = ntohl(buffer);
+    printf("temp val: %d\n", temp);
     return temp;
 }
 
@@ -137,9 +145,9 @@ int main(int argc, char* argv[]) {
       exit(-1);
     }
     // TESTING CHDIR
-    printf("changing directory!\n");
-    execvp("/bin/ls", "ls");
-    printf("changed directory\n");
+    //printf("changing directory!\n");
+    //execvp("/bin/ls", "ls");
+    //printf("changed directory\n");
 
     printf("Listened\n");
     printf("awaiting connection\n");
@@ -178,7 +186,7 @@ int main(int argc, char* argv[]) {
       }
       // MKDR: Make Directory
       else if (strcmp(buf, "MKDR") == 0) {
-        printf("Received MKDIR command\n");
+        printf("Received MKDR command\n");
         mkdir_handler(clientSocket);
 
       }
@@ -270,5 +278,28 @@ void list_handler(int clientSocket){
 }
 
 void mkdir_handler(int clientSocket) {
+    char* dirBuffer;
+    int directory_size = receive_int(clientSocket);
+    printf("Received directory size %d\n", directory_size);
+    int bytesReceived = receive_buffer(clientSocket, dirBuffer, strlen(dirBuffer));
+    printf("Received name length %d\n", bytesReceived);
 
+    struct stat st;
+
+    if (stat(dirBuffer, &st) == 0 && S_ISDIR(st.st_mode)) {
+        printf("Directory already exists!\n");
+        int sent = send_int(-2, clientSocket);
+    }
+    else {
+        printf("Trying to create directory\n");
+        if (mkdir(dirBuffer, 0777) == -1) {
+            perror("ERROR: Failed to create directory.\n");
+            int sent = send_int(-1, clientSocket);
+        }
+        else {
+            int sent = send_int(1, clientSocket);
+            printf("Directory created!\n");
+        }
+            
+    }
 }
