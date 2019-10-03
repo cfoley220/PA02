@@ -9,6 +9,8 @@
  * TODO: CODE DESCRIPTION
 */
 
+// TODO: spell check this whole bitch
+
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -22,10 +24,13 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <unistd.h>
+#include <time.h>
 
-#define MAX_BUFFER_SIZE 4096
+#define MAX_BUFFER_SIZE 64//4096
 #define EMPTY_DIRECTORY_SIZE 6
 #define EMPTY_FILE_SIZE 0
+#define MD5SUM_LENGTH 32
+#define MIN(a,b) (((a)<(b))?(a):(b))
 
 void list_handler(int);
 void mkdr_handler(int);
@@ -33,6 +38,8 @@ void rmdr_handler(int);
 void chdr_handler(int);
 void crfl_handler(int);
 void rmfl_handler(int);
+void dnld_handler(int);
+void upld_handler(int);
 
 // int send_short(short value, int socket) {
 //     int len;
@@ -179,23 +186,22 @@ int main(int argc, char* argv[]) {
       // DNLD: Download
       if (strcmp(buf, "DNLD") == 0) {
         printf("Received DNLD command\n");
-
+        dnld_handler(clientSocket);
       }
       // UPLD: Upload
       else if (strcmp(buf, "UPLD") == 0) {
         printf("Received UPLD command\n");
+        upld_handler(clientSocket);
       }
       // LIST: List
       else if (strcmp(buf, "LIST") == 0) {
         printf("Received LIST command\n");
         list_handler(clientSocket);
-
       }
       // MKDR: Make Directory
       else if (strcmp(buf, "MKDR") == 0) {
         printf("Received MKDR command\n");
         mkdr_handler(clientSocket);
-
       }
       // RMDR: Remove Directory
       else if (strcmp(buf, "RMDR") == 0) {
@@ -216,7 +222,6 @@ int main(int argc, char* argv[]) {
       else if (strcmp(buf, "RMFL") == 0) {
         printf("Received RMFL command\n");
         rmfl_handler(clientSocket);
-
       }
       // Default case
       else {
@@ -251,14 +256,18 @@ void list_handler(int clientSocket){
   int cnt = 0;
   FILE* fp;
 
+  bzero(buffer, sizeof(buffer));
+
   // Obtain list of directory
   fp = popen("ls -l", "r");
 
-  // Determine size of directory
+  // Determine size of directory listing
   while((bytesRead = fread(buffer, sizeof(char), sizeof(buffer)-1, fp)) > 0) {
     totalBytesRead += bytesRead;
+    bzero(buffer, sizeof(buffer));
   }
-  //printf("Total bytes of directory: %d\n", totalBytesRead);
+  bzero(buffer, sizeof(buffer));
+
 
   // Send size of directory
   send_int(totalBytesRead, clientSocket);
@@ -266,17 +275,10 @@ void list_handler(int clientSocket){
   // Read directory listing
   char directoryListing[totalBytesRead];
   fp = popen("ls -l", "r");
-  //printf("Did fseek work?: %d\n\t %s\n", val, strerror(errno));
   bytesRead = fread(directoryListing, sizeof(char), sizeof(directoryListing), fp);
   int len;
 
-  //printf("directory listing:\n %s\n", directoryListing);
   len = send_buffer(clientSocket, directoryListing, sizeof(directoryListing));
-
-  //printf("\n");
-
-  //printf("total bytes: %d\n", totalBytesRead);
-
 
   pclose(fp);
 
@@ -424,4 +426,142 @@ void rmfl_handler(int clientSocket){
       // server sends negative confirmation back to the client
     int sent = send_int(-1, clientSocket);
   }
+}
+
+void dnld_handler(int clientSocket){
+  // Prepare to receive file name and file name size
+  char fileBuffer[MAX_BUFFER_SIZE + 1];
+  bzero((char*)&fileBuffer, sizeof(fileBuffer));
+
+  // Recieve file name size and file name
+  int file_name_size = receive_int(clientSocket);
+  int bytesReceived = receive_buffer(clientSocket, fileBuffer, file_name_size);
+
+  struct stat st;
+
+  // Check if file already exists
+  if (stat(fileBuffer, &st) == 0 && S_ISREG(st.st_mode)) {
+    // send file size
+    int file_size = st.st_size;
+    int sent_size = send_int(file_size, clientSocket);
+
+    // send md5sum of file
+    char sum[MD5SUM_LENGTH + 1]; // buffer to hold actual sum
+    char cmd[7 + strlen(fileBuffer) + 1]; // buffer to hold command for linux command
+    sprintf(cmd, "md5sum %s", fileBuffer); // put the actual command string in its buffer
+    FILE *p = popen(cmd, "r");
+    if (p == NULL){
+      printf("ERROR: Error calculating md5sum\n");
+      // TODO: how should we return from here? maybe we just dont error check
+    }
+    // fetch the results of the command
+    int i, ch;
+    for (i = 0; i < 32 && isxdigit(ch = fgetc(p)); i++) {
+        sum[i] = ch;
+    }
+    sum[MD5SUM_LENGTH] = '\0';
+    pclose(p);
+
+    // send the actual md5sum
+    int sent_md5sum = send_buffer(clientSocket, sum, MD5SUM_LENGTH);
+
+    // send the actual file
+    FILE *fp = fopen(fileBuffer, "r");
+    char dnldBuffer[MAX_BUFFER_SIZE];
+    bzero((char*)&dnldBuffer, sizeof(dnldBuffer));
+
+    int sent_file_bytes = 0;
+
+    // send file in chunks of MAX_BUFFER_SIZE
+    while(sent_file_bytes < file_size){
+      int bytes_read = fread(dnldBuffer, sizeof(char), MAX_BUFFER_SIZE, fp);
+      printf("Bytes read: %d, chunk of file read: %s\n\n", bytes_read, dnldBuffer);
+      int sent = send_buffer(clientSocket, dnldBuffer, bytes_read);
+      sent_file_bytes += sent;
+      bzero((char*)&dnldBuffer, sizeof(dnldBuffer));
+    }
+  }
+  else {
+    // server sends negative confirmation (as the file size) back to the client
+    int sent = send_int(-1, clientSocket);
+  }
+}
+
+void upld_handler(int clientSocket){
+  // Prepare to recieve file name and file name size
+  char fileBuffer[MAX_BUFFER_SIZE];
+  bzero((char*)&fileBuffer, sizeof(fileBuffer));
+
+  // Recieve file name size and file name
+  int file_name_size = receive_int(clientSocket);
+  int bytesReceived = receive_buffer(clientSocket, fileBuffer, file_name_size);
+
+  printf("Received file name and size.\n");
+
+  // Acknowledge to client that server is ready to receive
+  int ready = send_int(1, clientSocket);
+  printf("Sent acknowledgment (1) that server is ready to receive.\n");
+
+  // Receive file size
+  int file_size = receive_int(clientSocket);
+
+	// Create file
+	FILE *fp = fopen(fileBuffer, "w");
+
+	if (fp == NULL) {
+		printf("ERROR: Failed to create file.\n");
+		// TODO: what to do with this failure? server won't know this occured and could be left sending/reading
+	} else {
+
+    printf("Receiving data...\n");
+		// Recieve file data
+		int receivedBytes = 0;
+		char buffer[MAX_BUFFER_SIZE + 1];
+
+		while(receivedBytes < file_size) {
+			bzero(buffer, sizeof(buffer));
+			// TODO: Bailey: START TIMER FOR THROUGHPUT HERE (accumulate each loop)
+			// there is a hint in the instructions on how to do this
+			receivedBytes += receive_buffer(clientSocket, buffer, MIN(MAX_BUFFER_SIZE,file_size-receivedBytes));
+			// TODO: Bailey: STOP TIMER FOR THROUGHPUT HERE AND
+			// use receivedBytes for size in calculation
+			//
+			// the reason for this placement is to time only the recieveing, and not the disk writing
+      printf("Received %d bytes.\n", receivedBytes);
+			fwrite(buffer, sizeof(char), strlen(buffer), fp);
+		}
+
+		fflush(fp);
+
+    printf("Calculating md5sum.\n");
+		// Calculate md5hash
+		char calculatedMd5sum[MD5SUM_LENGTH + 1]; // buffer to hold actual sum
+		bzero(calculatedMd5sum, sizeof(calculatedMd5sum));
+		char cmd[7 + strlen(fileBuffer) + 1]; // buffer to hold command for linux command
+		sprintf(cmd, "md5sum %s", fileBuffer); // put the actual command string in its buffer
+
+    FILE *p = popen(cmd, "r");
+		if (p == NULL){
+			printf("ERROR: Error calculating md5sum\n");
+			// TODO: how should we return from here? maybe we just dont error check
+		}
+		// fetch the results of the command
+		int i, ch;
+		for (i = 0; i < 32 && isxdigit(ch = fgetc(p)); i++) {
+				calculatedMd5sum[i] = ch;
+		}
+		calculatedMd5sum[MD5SUM_LENGTH] = '\0';
+		pclose(p);
+
+    printf("Calculated md5sum.\n");
+
+    // Send throughput results
+    // TODO: replace 1 with the actual throughput calculation
+    printf("Sending throughput.\n");
+    int sent = send_int(1, clientSocket);
+
+    // Send md5sum
+    printf("Sending md5sum.\n");
+    int sent_md5sum = send_buffer(clientSocket, calculatedMd5sum, MD5SUM_LENGTH);
+	}
 }
