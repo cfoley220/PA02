@@ -26,7 +26,7 @@
 #include <unistd.h>
 #include <time.h>
 
-#define MAX_BUFFER_SIZE 64//4096
+#define MAX_BUFFER_SIZE 4096//4096
 #define EMPTY_DIRECTORY_SIZE 6
 #define EMPTY_FILE_SIZE 0
 #define MD5SUM_LENGTH 32
@@ -51,6 +51,12 @@ void upld_handler(int);
 //
 //     return len;
 // }
+
+static long getMicrotime() {
+  struct timeval currentTime;
+  gettimeofday(&currentTime, NULL);
+  return currentTime.tv_sec * (int)1e6 + currentTime.tv_usec;
+}
 
 int receive_short(int s) {
   printf("IN SHORT FUNCTION\n");
@@ -517,7 +523,7 @@ void upld_handler(int clientSocket){
 		// Recieve file data
 		int receivedBytes = 0;
 		char buffer[MAX_BUFFER_SIZE + 1];
-
+    long time_start = getMicrotime();
 		while(receivedBytes < file_size) {
 			bzero(buffer, sizeof(buffer));
 			// TODO: Bailey: START TIMER FOR THROUGHPUT HERE (accumulate each loop)
@@ -530,8 +536,16 @@ void upld_handler(int clientSocket){
       printf("Received %d bytes.\n", receivedBytes);
 			fwrite(buffer, sizeof(char), strlen(buffer), fp);
 		}
+    fclose(fp);
+    long time_end = getMicrotime();
 
-		fflush(fp);
+    // Calculation of Throughput
+    long diff = time_end - time_start;
+    double diff_s = (double)diff * 0.000001;
+    double megabytes = (double)receivedBytes * 0.000001;
+    double throughput = megabytes / diff_s;
+
+    fflush(fp);
 
     printf("Calculating md5sum.\n");
 		// Calculate md5hash
@@ -556,9 +570,18 @@ void upld_handler(int clientSocket){
     printf("Calculated md5sum.\n");
 
     // Send throughput results
-    // TODO: replace 1 with the actual throughput calculation
     printf("Sending throughput.\n");
-    int sent = send_int(1, clientSocket);
+    if ((write(clientSocket, (const char*)&throughput, sizeof(throughput))) == -1) {
+      perror("ERROR: Server Sending\n");
+      exit(1);
+    }
+    //send time results
+    printf("Sending time.\n");
+    if ((write(clientSocket, (const char *)&diff_s, sizeof(diff_s))) == -1)
+    {
+      perror("ERROR: Server Sending\n");
+      exit(1);
+    }
 
     // Send md5sum
     printf("Sending md5sum.\n");

@@ -25,7 +25,7 @@
 #include <errno.h>
 #include <sys/stat.h>
 
-#define MAX_BUFFER_SIZE 64//4096
+#define MAX_BUFFER_SIZE 4096//4096
 #define MD5SUM_LENGTH 32
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
@@ -38,6 +38,11 @@ void rmfl_handler(int);
 void dnld_handler(int);
 void upld_handler(int);
 
+static long getMicrotime() {
+	struct timeval currentTime;
+	gettimeofday(&currentTime, NULL);
+	return currentTime.tv_sec * (int)1e6 + currentTime.tv_usec;
+}
 
 int send_buffer(int s, char* buffer, int size) {
 	int len;
@@ -204,6 +209,8 @@ int main(int argc, char *argv[]) {
 
 void list_handler(int clientSocket){
   char messageBuffer[MAX_BUFFER_SIZE];
+  char dirList[MAX_BUFFER_SIZE];
+  bzero(messageBuffer, sizeof(messageBuffer));
 
   // Get size of directory
   int directorySize = receive_int(clientSocket);
@@ -214,15 +221,18 @@ void list_handler(int clientSocket){
   while(bytesRecvd < directorySize) {
     memset(&messageBuffer, 0, sizeof(messageBuffer));
     bytesRecvd += receive_buffer(clientSocket, messageBuffer, sizeof(messageBuffer));
+	strcat(dirList, messageBuffer);
     //printf("Bytes received: %d\n", bytesRecvd);
     //printf("Msg buffer: %s\n", messageBuffer);
-    printf("%s\n", messageBuffer);
+	bzero(messageBuffer, sizeof(messageBuffer));
 
     // Escape reading loop if its empty or error
     if (bytesRecvd <= 0){
       break;
     }
   }
+  bzero(messageBuffer, sizeof(messageBuffer));
+  printf("%s", dirList);
 }
 
 void mkdr_handler(int clientSocket) {
@@ -465,20 +475,25 @@ void dnld_handler(int clientSocket){
 			int receivedBytes = 0;
 			char buffer[MAX_BUFFER_SIZE+1];
 			bzero((char*)&buffer, sizeof(buffer));
-
+			long time_start = getMicrotime();
 			while(receivedBytes < filesize) {
-				// TODO: Bailey: START TIMER FOR THROUGHPUT HERE (accumulate each loop)
-				// there is a hint in the instructions on how to do this
 				receivedBytes += receive_buffer(clientSocket, buffer, MIN(MAX_BUFFER_SIZE,filesize-receivedBytes));
 				printf("Bytes received: %d, chunk of file received: %s\n\n", receivedBytes, buffer);
-				// TODO: Bailey: STOP TIMER FOR THROUGHPUT HERE AND
-				// use receivedBytes for size in calculation
-				//
-				// the reason for this placement is to time only the recieveing, and not the disk writing
-				fwrite(buffer, sizeof(char), strlen(buffer), fp);
+				
+				if (fwrite(buffer, sizeof(char), strlen(buffer), fp)) {
+					printf("Writing error!\n");
+				}
 				bzero((char*)&buffer, sizeof(buffer));
 			}
+			long time_end = getMicrotime();
 
+			//Calculation of Throughput
+			long diff = time_end - time_start;
+			double diff_s = (double)diff * 0.000001;
+			double megabytes = (double)receivedBytes * 0.000001;
+			double throughput = megabytes / diff_s;
+
+			fclose(fp);
 
 			fflush(fp);
 
@@ -510,10 +525,7 @@ void dnld_handler(int clientSocket){
 			(strcmp(receiveMd5sum, calculatedMd5sum) == 0) ? "" : "not "
 			);
 
-			// TODO: Bailey: rename and calculate seconds and throughput
-			int seconds = 5;
-			int rate = receivedBytes/seconds;
-			printf("%d bytes transferred in %d seconds: %d MegaBytes\\sec.\n", receivedBytes, seconds, rate);
+			printf("%d bytes transferred in %f seconds: %f MegaBytes\\sec.\n", receivedBytes, diff_s, throughput);
 			printf("MD5Hash: %s (%s)\n", calculatedMd5sum, (strcmp(receiveMd5sum, calculatedMd5sum) == 0) ? "matches" : "doesn't match");
 		}
 	}
@@ -563,9 +575,24 @@ void upld_handler(int clientSocket){
 		printf("done sending bytes: sent %d\n", sentBytes);
 
 		// Receive throughput
-		printf("waiting for thruput\n");
-		int throughput = receive_int(clientSocket);
-		printf("got thruput: %d\n",throughput);
+		double throughput;
+		int len;
+		printf("waiting for throughput\n");
+		if ((len = read(clientSocket, &throughput, sizeof(throughput))) == -1) {
+			perror("ERROR: Client Receive\n");
+			exit(1);
+		}
+
+		// Receive time
+		double diff_s;
+		printf("waiting for throughput\n");
+		if ((len = read(clientSocket, &diff_s, sizeof(diff_s))) == -1)
+		{
+			perror("ERROR: Client Receive\n");
+			exit(1);
+		}
+
+		printf("got throughput: %d\n",throughput);
 		// TODO: do something with throughput
 
 		// Receive md5sum
@@ -600,7 +627,8 @@ void upld_handler(int clientSocket){
 
 		if (strcmp(receiveMd5sum, calculatedMd5sum) == 0) {
 			printf("Transfer success!\n");
-			// TODO: format this correctly and for throughput
+			printf("%d bytes transferred in %f seconds: %f Megabytes/sec\n", fileSize, diff_s, throughput);
+			printf("MD5Hash: %s (%s)\n", calculatedMd5sum, (strcmp(receiveMd5sum, calculatedMd5sum) == 0) ? "matches" : "doesn't match");
 		} else {
 			printf("Transfer failed.\n");
 		}
