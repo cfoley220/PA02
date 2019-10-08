@@ -6,12 +6,26 @@
  *
  * myftp.c (Client)
  *
- * TODO: CODE DESCRIPTION
-*/
+ * This is our client for our PA02 TCP assignment. The client begins by establishing a connection
+ * to the already-running server. It then accepts operations from the user (DNLD: Download,
+ * UPLD: Upload, LIST: List, MKDR: Make Directory, RMDR: Remove Directory, CHDR: Change Directory,
+ * CRFL: Create File, RMFL: Remove File, QUIT: Quit) and handles them appropriately via handler
+ * methods. The client loops to allow the user to enter multiple operations. It loops until the
+ * user enters QUIT.
+ */
 
-// TODO: go through demo video, and match print statements
-// TODO: catch a ^C on the client side and sent a message to the server to shut down
-// TODO: change sending name lengths to send_short as required by instructions ):
+/* TODO LIST
+   - catch ^C and send message to server to shut it down  (ASK TA)
+   - handle errors better (not just exit. part of the project rubric. ASK TA)
+   - write what does getMicrotime() do in comment
+   - timing/throughput gives 0 and nan results most times. unsure why
+   - spell check entire file
+
+   non-file specific items
+   - make README
+   - test on multiple student machines
+   - create zipped file
+ */
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -25,9 +39,9 @@
 #include <errno.h>
 #include <sys/stat.h>
 
-#define MAX_BUFFER_SIZE 4096//4096
+#define MAX_BUFFER_SIZE 4096
 #define MD5SUM_LENGTH 32
-#define MIN(a,b) (((a)<(b))?(a):(b))
+#define MIN(a,b) (((a)<(b)) ? (a) : (b))
 
 void list_handler(int);
 void mkdr_handler(int);
@@ -38,604 +52,612 @@ void rmfl_handler(int);
 void dnld_handler(int);
 void upld_handler(int);
 
+/*
+ * getMicrotime()
+ *
+ * TODO: what does this do
+ */
 static long getMicrotime() {
-	struct timeval currentTime;
-	gettimeofday(&currentTime, NULL);
-	return currentTime.tv_sec * (int)1e6 + currentTime.tv_usec;
+								struct timeval currentTime;
+								gettimeofday(&currentTime, NULL);
+								return currentTime.tv_sec * (int)1e6 + currentTime.tv_usec;
 }
 
-int send_buffer(int s, char* buffer, int size) {
-	int len;
-  if ((len = write(s, buffer, size)) == -1) {
-        perror("ERROR: Client Send\n");
-        exit(1);
-  }
-	return len;
+/*
+ * send_buffer(clientSocket, buffer, size)
+ *
+ * Send the data within buffer parameter to the TCP connection on clientSocket
+ */
+int send_buffer(int clientSocket, char* buffer, int size) {
+								int len;
+								if ((len = write(clientSocket, buffer, size)) == -1) {
+																perror("Client Send\n");
+																exit(1);
+								}
+								return len;
 }
 
-int receive_buffer(int s, char* buffer, int size) {
-    int len;
-    bzero(buffer, sizeof(buffer));
-    if ((len = read(s, buffer, size)) == -1) {
-        perror("ERROR: Client Receive!");
-        exit(1);
-    }
-    return len;
+/*
+ * receive_buffer(clientSocket, buffer, size)
+ *
+ * Receives a buffer of data from the TCP connection on clientSocket
+ */
+int receive_buffer(int clientSocket, char* buffer, int size) {
+								int len;
+								bzero(buffer, sizeof(buffer));
+								if ((len = read(clientSocket, buffer, size)) == -1) {
+																perror("Client Receive!");
+																exit(1);
+								}
+								return len;
 }
 
-int send_int(int value, int s) {
-	int len;
-    int temp = htonl(value);
-    if ((len = write(s, &temp, sizeof(temp))) == -1) {
-        perror("ERROR: Client Send");
-        exit(1);
-    }
+/*
+ * send_int(value, clientSocket)
+ *
+ * Sends an int over the TCP connection on clientSocket
+ */
+int send_int(int value, int clientSocket) {
+								int len;
+								uint32_t temp = htonl(value);
+								if ((len = write(clientSocket, &temp, sizeof(temp))) == -1) {
+																perror("Client Send");
+																exit(1);
+								}
 
-	return len;
+								return len;
 }
 
-int receive_int(int s) {
-    int buffer;
-    int len;
-    bzero(&buffer, sizeof(buffer));
-    if ((len = read(s, &buffer, sizeof(buffer))) == -1) {
-        perror("ERROR: Client Receive");
-        exit(1);
-    }
+/*
+ * receive_int(clientSocket)
+ *
+ * Receives an int over the TCP connection on clientSocket
+ */
+int receive_int(int clientSocket) {
+								int buffer;
+								int len;
+								bzero(&buffer, sizeof(buffer));
+								if ((len = read(clientSocket, &buffer, sizeof(buffer))) == -1) {
+																perror("Client Receive Error");
+																exit(1);
+								}
 
-    int temp = ntohl(buffer);
-    return temp;
+								int temp = ntohl(buffer);
+								return temp;
 }
 
 int main(int argc, char *argv[]) {
 
-	// socket
-	int clientSocket;
-	if((clientSocket = socket(AF_INET, SOCK_STREAM, 0)) < 0 )  {
-		printf("Client: Error creating socket\n");
-		exit(0);
-	}
+								// parse command line arguments
+								if(argc != 3) {
+																printf("%s: Incorrect usage.\n Usage: %s ADDR PORT \n", argv[0], argv[0]);
+																exit(1);
+								}
 
-  printf("Client: Created socket\n");
+								int port = atoi(argv[2]);
 
-  struct sockaddr_in servaddr;
+								// Create socket
+								int clientSocket;
+								if((clientSocket = socket(AF_INET, SOCK_STREAM, 0)) < 0 )  {
+																printf("Client: Error creating socket\n");
+																exit(0);
+								}
 
-  memset(&servaddr, 0, sizeof(servaddr));
+								struct sockaddr_in servaddr;
 
-  printf("Client: Got address info\n");
+								memset(&servaddr, 0, sizeof(servaddr));
 
-  // TODO: take in server name and port via command line arguements
-	servaddr.sin_family = AF_INET;
-  servaddr.sin_addr.s_addr = inet_addr(inet_ntoa(*((struct in_addr*) gethostbyname("student02.cse.nd.edu")->h_addr_list[0]))); // ip addr of student02
-  servaddr.sin_port = htons(41030);
+								servaddr.sin_family = AF_INET;
+								servaddr.sin_addr.s_addr = inet_addr(inet_ntoa(*((struct in_addr*) gethostbyname(argv[1])->h_addr_list[0])));
+								servaddr.sin_port = htons(port);
 
-	// servaddr.sin_port = htons(41015);
-	// servaddr.sin_port = htons(41002);
+								// connect
+								printf("Connection to %s on port %d\n", argv[1], port);
+								if (connect(clientSocket, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
+																printf("Client: Error connecting to server: %s\n", strerror(errno));
+																exit(0);
+								}
+								printf("Connection established\n");
 
-  // connect
-  if (connect(clientSocket, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0){
-    printf("Client: Error connecting to server: %s\n", strerror(errno));
-    exit(0);
-  }
+								char *userInput;
 
-  printf("Client: Connected\n");
+								while(1) {
 
-	char *userInput;
+																// Prompt the user for an Operation
+																printf("> ");
+																fgets(userInput, 50, stdin);
 
-	while(1) {
+																// Get rid of the endline character
+																userInput[strlen(userInput)-1] = '\0';
 
-		// Prompt the user for an Operation
-		printf("Operations:\n\tDNLD: Download,\n\tUPLD: Upload,\n\tLIST: List,\n\tMKDR: Make Directory,\n\tRMDR: Remove Directory,\n\tCHDR: Change Directory,\n\tCRFL: Create File,\n\tRMFL: Remove File,\n\tQUIT: Quit\n\n");
-		printf("Enter an operation: ");
-		fgets(userInput, 50, stdin);
+																// Get operation out of user input
+																char * operation = strtok(userInput, " \t\n");
 
-		// Get rid of the endline character
-		userInput[strlen(userInput)-1] = '\0';
+																if (strlen(operation) != 4) {
+																								printf("Operation must be 4 characters.\n");
+																								continue;
+																}
 
-    // Get operation out of user input
-    char *operation = strtok(userInput, " "); // TODO: regex for any whitespace?
-    // TODO: ENSURE THAT OPERATION IS 4 CHARACTERS
-    // currently errors out: to reproduce:
-    // run server and client
-    // on client:
-    // send: "MKDIR aa"
-    // send: "MKDR aa"
-		// TODO: ensure that if an operation is typed, it has the correct arguments
-		// ex. "DNLD" with no arguments after will give you a seg fault
-		// it should be "DNLD SmallFile.txt"
+																int sent = send_buffer(clientSocket, operation, strlen(operation));
 
-	  printf("Sending the operation\n");
+																// DNLD: Download
+																if (strcmp(operation, "DNLD") == 0) {
+																								dnld_handler(clientSocket);
 
-	  // Send the operation to the server
-	  int sent = send_buffer(clientSocket, operation, strlen(operation));
-    // TODO: double check that strlen works
+																}
+																// UPLD: Upload
+																else if (strcmp(operation, "UPLD") == 0) {
+																								upld_handler(clientSocket);
+																}
+																// LIST: List
+																else if (strcmp(operation, "LIST") == 0) {
+																								list_handler(clientSocket);
+																}
+																// MKDR: Make Directories
+																else if (strcmp(operation, "MKDR") == 0) {
+																								mkdr_handler(clientSocket);
+																}
+																// RMDR: Remove Directory
+																else if (strcmp(operation, "RMDR") == 0) {
+																								rmdr_handler(clientSocket);
+																}
+																// CHDR: Change Directory
+																else if (strcmp(operation, "CHDR") == 0) {
+																								chdr_handler(clientSocket);
+																}
+																// CRFL: Create File
+																else if (strcmp(operation, "CRFL") == 0) {
+																								crfl_handler(clientSocket);
+																}
+																// RMFL: Remove File
+																else if (strcmp(operation, "RMFL") == 0) {
+																								rmfl_handler(clientSocket);
+																}
+																// QUIT: Quit
+																else if (strcmp(operation, "QUIT") == 0) {
+																								break;
+																}
+																// Default: invalid
+																else {
+																								printf("Invalid command.\n");
+																}
 
-	  printf("Sent the operation, %d bytes sent\n", sent);
+								}
 
-		// DNLD: Download
-		if (strcmp(operation, "DNLD") == 0) {
-			printf("Sent DNLD command\n");
-			dnld_handler(clientSocket);
-
-		}
-		// UPLD: Upload
-		else if (strcmp(operation, "UPLD") == 0) {
-			printf("Sent UPLD command\n");
-			upld_handler(clientSocket);
-		}
-		// LIST: List
-		else if (strcmp(operation, "LIST") == 0) {
-			printf("Sent LIST command\n");
-      list_handler(clientSocket);
-		}
-		// MKDR: Make Directories
-		else if (strcmp(operation, "MKDR") == 0) {
-      printf("Sent MKDR command\n");
-			mkdr_handler(clientSocket);
-		}
-		// RMDR: Remove Directory
-		else if (strcmp(operation, "RMDR") == 0) {
-			printf("Sent RMDR command\n");
-      rmdr_handler(clientSocket);
-		}
-		// CHDR: Change Directory
-		else if (strcmp(operation, "CHDR") == 0) {
-			printf("Sent CHDR command\n");
-      chdr_handler(clientSocket);
-		}
-		// CRFL: Create File
-		else if (strcmp(operation, "CRFL") == 0) {
-			printf("Sent CRFL command\n");
-      crfl_handler(clientSocket);
-		}
-		// RMFL: Remove File
-		else if (strcmp(operation, "RMFL") == 0) {
-			printf("Sent RMFL command\n");
-      rmfl_handler(clientSocket);
-		}
-    // QUIT: Quit
-		else if (strcmp(operation, "QUIT") == 0){
-			break;
-		}
-
-		else {
-			printf("ERROR: Invalid command.\n");
-		}
-
-	}
-
-	close(clientSocket);
+								close(clientSocket);
 }
 
 void list_handler(int clientSocket){
-  char messageBuffer[MAX_BUFFER_SIZE];
-  char dirList[MAX_BUFFER_SIZE];
-  bzero(messageBuffer, sizeof(messageBuffer));
+								char messageBuffer[MAX_BUFFER_SIZE];
+								char dirList[MAX_BUFFER_SIZE];
+								bzero(messageBuffer, sizeof(messageBuffer));
+								bzero(dirList, sizeof(dirList));
 
-  // Get size of directory
-  int directorySize = receive_int(clientSocket);
-  //printf("Size of directory: %d\n", directorySize);
+								// Get size of directory
+								int directorySize = receive_int(clientSocket);
 
-  // Recieve listing
-  int bytesRecvd = 0;
-  while(bytesRecvd < directorySize) {
-    memset(&messageBuffer, 0, sizeof(messageBuffer));
-    bytesRecvd += receive_buffer(clientSocket, messageBuffer, sizeof(messageBuffer));
-	strcat(dirList, messageBuffer);
-    //printf("Bytes received: %d\n", bytesRecvd);
-    //printf("Msg buffer: %s\n", messageBuffer);
-	bzero(messageBuffer, sizeof(messageBuffer));
+								// Recieve listing
+								int bytesRecvd = 0;
+								while(bytesRecvd < directorySize) {
+																memset(&messageBuffer, 0, sizeof(messageBuffer));
+																bytesRecvd += receive_buffer(clientSocket, messageBuffer, sizeof(messageBuffer)-1);
+																strcat(dirList, messageBuffer);
+																bzero(messageBuffer, sizeof(messageBuffer));
 
-    // Escape reading loop if its empty or error
-    if (bytesRecvd <= 0){
-      break;
-    }
-  }
-  bzero(messageBuffer, sizeof(messageBuffer));
-  printf("%s", dirList);
+																// Escape reading loop if its empty or error
+																if (bytesRecvd <= 0) {
+																								break;
+																}
+								}
+								bzero(messageBuffer, sizeof(messageBuffer));
+								printf("%s", dirList);
 }
 
 void mkdr_handler(int clientSocket) {
-	// Get directory name and size
-	char* directory = strtok(NULL, " ");
+								// Get directory name and size
+								char* directory = strtok(NULL, " ");
 
-	// Send length of directory name (short int)
-	int received = send_int(strlen(directory), clientSocket);
+								if (directory == NULL) {
+																printf("Improper use of command. Need to include a directory\n");
+																// TODO: handle error. should we exit?
+								}
 
-	// Send directory name (string)
-	send_buffer(clientSocket, directory, strlen(directory));
+								// Send length of directory name (int)
+								int received = send_int(strlen(directory), clientSocket);
 
-	// Recieve status update and inform user
-	int status = receive_int(clientSocket);
+								// Send directory name (string)
+								send_buffer(clientSocket, directory, strlen(directory));
 
-	if (status == -2) {
-		printf("ERROR: The directory already exists on the server.\n");
-	}
-	else if (status == -1) {
-		printf("ERROR: Making directory.\n");
-	}
-	else {
-		printf("The directory was successfully made!\n");
-	}
+								// Recieve status update and inform user
+								int status = receive_int(clientSocket);
+
+								if (status == -2) {
+																printf("The directory already exists on the server.\n");
+								}
+								else if (status == -1) {
+																printf("Making directory.\n");
+								}
+								else {
+																printf("The directory was successfully made!\n");
+								}
 
 }
 
 void rmdr_handler(int clientSocket){
-  // Get directory name and size
-  char* directory = strtok(NULL, " ");
+								// Get directory name and size
+								char* directory = strtok(NULL, " ");
 
-  printf("Directory is: %s\n", directory);
+								if (directory == NULL) {
+																printf("Improper use of command. Need to include a file name\n");
+																// TODO: handle error. should we exit?
+								}
 
-  // Send length of directory name (short int)
-  int received = send_int(strlen(directory), clientSocket);
+								// Send length of directory name (int)
+								int received = send_int(strlen(directory), clientSocket);
 
-  // Send directory name (string)
-  send_buffer(clientSocket, directory, strlen(directory));
+								// Send directory name (string)
+								send_buffer(clientSocket, directory, strlen(directory));
 
-  // Recieve status update and inform user
-  int status = receive_int(clientSocket);
+								// Recieve status update and inform user
+								int status = receive_int(clientSocket);
 
-  printf("Recieved status: %d\n", status);
+								if (status == -1) {
+																// Directory DNE
+																printf("The directory does not exist on server.\n");
+								}
+								else if (status == -2) {
+																// Directory not empty
+																printf("The directory is not empty.\n");
+								}
+								else if (status == 1) {
+																// Directory can be deleted
 
-  if (status == -1) {
-    // Directory DNE
-    printf("ERROR: The directory does not exist on server.\n");
-  }
-  else if (status == -2) {
-    // Directory not empty
-    printf("ERROR: The directory is not empty.\n");
-  }
-  else if (status == 1){
-    // Directory can be deleted
+																// Get user confirmation
+																printf("Are you sure you would like to delete %s? [Yes/No]\n", directory);
 
-    // Get user confirmation
-    printf("Are you sure you would like to delete %s? [Yes/No]\n", directory);
+																char userConfirmation[5];
+																bzero(userConfirmation, sizeof(userConfirmation));
+																fgets(userConfirmation, 5, stdin);
 
-    char userConfirmation[5];
-    bzero(userConfirmation, sizeof(userConfirmation));
-    fgets(userConfirmation, 5, stdin);
+																// Get rid of the endline character
+																userConfirmation[strlen(userConfirmation)-1] = '\0';
+																// Ensure last two characters are null
+																userConfirmation[4] = '\0';
+																userConfirmation[5] = '\0';
 
-    // Get rid of the endline character
-    userConfirmation[strlen(userConfirmation)-1] = '\0';
-    // Ensure last two characters are null
-    userConfirmation[4] = '\0';
-    userConfirmation[5] = '\0';
-
-    // Send confirmation
-    send_buffer(clientSocket, userConfirmation, 5);
+																// Send confirmation
+																send_buffer(clientSocket, userConfirmation, 5);
 
 
-    if (strcmp(userConfirmation, "Yes") == 0) {
-        // User wants to delete
-        printf("Waiting for status\n");
-        int status = receive_int(clientSocket);
-        printf("Recieved status back: %d\n", status);
+																if (strcmp(userConfirmation, "Yes") == 0) {
+																								// User wants to delete
+																								int status = receive_int(clientSocket);
 
-        if (status > 0) {
-          printf("Directory deleted\n");
-        } else if (status < 0) {
-          printf("Failed to delete directory\n");
-        } else {
-          printf("ERROR: Unknown status received for RMDR from server.\n");
-        }
-    } else {
-        // User does not want to delete
-      printf("Delete abandoned by the user!\n");
-    }
+																								if (status > 0) {
+																																printf("Directory deleted\n");
+																								} else if (status < 0) {
+																																printf("Failed to delete directory\n");
+																								} else {
+																																printf("Unknown status received for RMDR from server.\n");
+																								}
+																} else {
+																								// User does not want to delete
+																								printf("Delete abandoned by the user!\n");
+																}
 
-  } else {
-    printf("ERROR: Unknown status received for RMDR from server.\n");
-  }
-
-  printf("ENDING RMDR PART\n");
+								} else {
+																printf("Unknown status received for RMDR from server.\n");
+								}
 }
 
 void chdr_handler(int clientSocket){
-  // Get directory name and size
-  char* directory = strtok(NULL, " ");
+								// Get directory name and size
+								char* directory = strtok(NULL, " ");
 
-  printf("Directory is: %s\n", directory);
+								if (directory == NULL) {
+																printf("Improper use of command. Need to include a file name\n");
+																// TODO: handle error. should we exit?
+								}
 
-  // Send length of directory name (short int)
-  int received = send_int(strlen(directory), clientSocket);
+								// Send length of directory name (int)
+								int received = send_int(strlen(directory), clientSocket);
 
-  // Send directory name (string)
-  send_buffer(clientSocket, directory, strlen(directory));
+								// Send directory name (string)
+								send_buffer(clientSocket, directory, strlen(directory));
 
-  // Recieve status update and inform user
-  int status = receive_int(clientSocket);
+								// Recieve status update and inform user
+								int status = receive_int(clientSocket);
 
-  if (status > 0) {
-    printf("Changed current directory.\n");
-  } else if (status == -1) {
-    printf("ERROR: Error in changing directory\n");
-  } else if (status == -2) {
-    printf("ERROR: The directory does not exist on server.\n");
-  } else {
-    printf("ERROR: Unknown status received for CHDR from server.\n");
-  }
+								if (status > 0) {
+																printf("Changed current directory\n");
+								} else if (status == -1) {
+																printf("Error in changing directory\n");
+								} else if (status == -2) {
+																printf("The directory does not exist on server.\n");
+								} else {
+																printf("Unknown status received for CHDR from server.\n");
+								}
 }
 
 void crfl_handler(int clientSocket) {
-  // Get file name and size
-  char* filename = strtok(NULL, " ");
+								// Get file name and size
+								char* filename = strtok(NULL, " ");
 
-  printf("File is: %s\n", filename);
+								if (filename == NULL) {
+																printf("Improper use of command. Need to include a file name\n");
+																// TODO: handle error. should we exit?
+								}
 
-  // Send length of directory name (short int)
-  send_int(strlen(filename), clientSocket);
+								// Send length of directory name (int)
+								send_int(strlen(filename), clientSocket);
 
-  // Send filename (string)
-  printf("sent size\n");
-  send_buffer(clientSocket, filename, strlen(filename));
+								// Send filename (string)
+								send_buffer(clientSocket, filename, strlen(filename));
 
-  // Recieve status update and inform user
-  int status = receive_int(clientSocket);
+								// Recieve status update and inform user
+								int status = receive_int(clientSocket);
 
-  if (status > 0) {
-    printf("The file was successfully created.\n");
-  } else if (status < 0) {
-    printf("ERROR: The file already exists.\n");
-  } else {
-    printf("ERROR: Unknown status received for CRFL from server.\n");
-  }
+								if (status > 0) {
+																printf("The file was successfully created.\n");
+								} else if (status < 0) {
+																printf("The file already exists.\n");
+								} else {
+																printf("Unknown status received for CRFL from server.\n");
+								}
 }
 
 void rmfl_handler(int clientSocket) {
-  // Get file name and size
-  char* filename = strtok(NULL, " ");
+								// Get file name and size
+								char* filename = strtok(NULL, " ");
 
-  printf("File is: %s\n", filename);
+								if (filename == NULL) {
+																printf("Improper use of command. Need to include a file name\n");
+																// TODO: handle error. should we exit?
+								}
 
-  // Send length of directory name (short int)
-  int received = send_int(strlen(filename), clientSocket);
 
-  // Send filename (string)
-  send_buffer(clientSocket, filename, strlen(filename));
+								// Send length of directory name (int)
+								int received = send_int(strlen(filename), clientSocket);
 
-  // Receive status update and inform user
-  int status = receive_int(clientSocket);
+								// Send filename (string)
+								send_buffer(clientSocket, filename, strlen(filename));
 
-  if (status < 0) {
-    printf("The file does not exist on server.\n");
-  } else if (status > 0) {
-    // Get user confirmation
-    printf("Are you sure you would like to delete %s? [Yes/No]\n", filename);
+								// Receive status update and inform user
+								int status = receive_int(clientSocket);
 
-    char userConfirmation[5];
-    bzero(userConfirmation, sizeof(userConfirmation));
-    fgets(userConfirmation, 5, stdin);
+								if (status < 0) {
+																printf("The file does not exist on server.\n");
+								} else if (status > 0) {
+																// Get user confirmation
+																printf("Are you sure you would like to delete %s? [Yes/No]\n", filename);
 
-    // Get rid of the endline character
-    userConfirmation[strlen(userConfirmation)-1] = '\0';
-    // Ensure last two characters are null
-    userConfirmation[4] = '\0';
-    userConfirmation[5] = '\0';
+																char userConfirmation[5];
+																bzero(userConfirmation, sizeof(userConfirmation));
+																fgets(userConfirmation, 5, stdin);
 
-    // Send confirmation
-    send_buffer(clientSocket, userConfirmation, 5);
+																// Get rid of the endline character
+																userConfirmation[strlen(userConfirmation)-1] = '\0';
+																// Ensure last two characters are null
+																userConfirmation[4] = '\0';
+																userConfirmation[5] = '\0';
 
-    if (strcmp(userConfirmation, "Yes") == 0) {
-        // User wants to delete
-        printf("Waiting for status\n");
-        int status = receive_int(clientSocket);
-        printf("Recieved status back: %d\n", status);
+																// Send confirmation
+																send_buffer(clientSocket, userConfirmation, 5);
 
-        if (status > 0) {
-          printf("File deleted\n");
-        } else if (status < 0) {
-          printf("Failed to delete file\n");
-        } else {
-          printf("ERROR: Unknown status received for RMFL from server.\n");
-        }
-    } else {
-        // User does not want to delete
-      printf("Delete abandoned by the user!\n");
-    }
+																if (strcmp(userConfirmation, "Yes") == 0) {
+																								// User wants to delete
+																								int status = receive_int(clientSocket);
 
-  } else {
-    printf("ERROR: Unknown status received for RMFL from server.\n");
-  }
+																								if (status > 0) {
+																																printf("File deleted.\n");
+																								} else if (status < 0) {
+																																printf("Failed to delete file\n");
+																								} else {
+																																printf("Unknown status received for RMFL from server.\n");
+																								}
+																} else {
+																								// User does not want to delete
+																								printf("Delete abandoned by the user!\n");
+																}
+
+								} else {
+																printf("Unknown status received for RMFL from server.\n");
+								}
 }
 
 void dnld_handler(int clientSocket){
-	// Get file name and size
-  char* filename = strtok(NULL, " ");
+								// Get file name and size
+								char* filename = strtok(NULL, " ");
+								//printf("in download\n");
 
-  // Send length of filename (short int)
-  send_int(strlen(filename), clientSocket);
+								if (filename == NULL) {
+																printf("Improper use of command. Need to include a file name\n");
+																// TODO: handle error. should we exit?
 
-  // Send filename (string)
-  send_buffer(clientSocket, filename, strlen(filename));
+								}
 
-  // Recieve status update and inform user
-  int status = receive_int(clientSocket);
+								// Send length of filename (int)
+								send_int(strlen(filename), clientSocket);
 
-	if (status == -1) {
-		printf("ERROR: File %s does not exist on server.\n", filename);
-		return;
-	} else {
-		int filesize = status;
+								// Send filename (string)
+								send_buffer(clientSocket, filename, strlen(filename));
 
-		// Receive md5sum
-		char receiveMd5sum[MD5SUM_LENGTH + 1];
-		bzero(receiveMd5sum, sizeof(receiveMd5sum));
+								// Recieve status update and inform user
+								int status = receive_int(clientSocket);
+								printf("    \n"); // TODO: wow.
 
-		receive_buffer(clientSocket, receiveMd5sum, MD5SUM_LENGTH);
+								if (status == -1) {
+																printf("File %s does not exist on server.\n", filename);
+																return;
+								} else {
+																int filesize = status;
 
-		// Create file
-		FILE *fp = fopen(filename, "w");
+																// Receive md5sum
+																char receiveMd5sum[MD5SUM_LENGTH + 1];
+																bzero(receiveMd5sum, sizeof(receiveMd5sum));
 
-		if (fp == NULL) {
-			printf("ERROR: Failed to create file.\n");
-			// TODO: what to do with this failure? server won't know this occured and could be left sending/reading
-		} else {
+																receive_buffer(clientSocket, receiveMd5sum, MD5SUM_LENGTH);
 
-			// Recieve file data
-			int receivedBytes = 0;
-			char buffer[MAX_BUFFER_SIZE+1];
-			bzero((char*)&buffer, sizeof(buffer));
-			long time_start = getMicrotime();
-			while(receivedBytes < filesize) {
-				receivedBytes += receive_buffer(clientSocket, buffer, MIN(MAX_BUFFER_SIZE,filesize-receivedBytes));
-				printf("Bytes received: %d, chunk of file received: %s\n\n", receivedBytes, buffer);
-				
-				if (fwrite(buffer, sizeof(char), strlen(buffer), fp)) {
-					printf("Writing error!\n");
-				}
-				bzero((char*)&buffer, sizeof(buffer));
-			}
-			long time_end = getMicrotime();
+																// Create file
+																FILE *fp = fopen(filename, "w");
 
-			//Calculation of Throughput
-			long diff = time_end - time_start;
-			double diff_s = (double)diff * 0.000001;
-			double megabytes = (double)receivedBytes * 0.000001;
-			double throughput = megabytes / diff_s;
+																if (fp == NULL) {
+																								printf("Failed to create file.\n");
+																								// TODO: what to do with this failure? server won't know this occured and could be left sending/reading
+																} else {
 
-			fclose(fp);
+																								// Recieve file data
+																								int totalReceivedBytes = 0;
+																								int receivedBytes;
+																								char buffer[MAX_BUFFER_SIZE];
+																								bzero((char*)&buffer, sizeof(buffer));
+																								long time_start = getMicrotime();
+																								while(totalReceivedBytes < filesize) {
+																																receivedBytes = receive_buffer(clientSocket, buffer, MIN(MAX_BUFFER_SIZE,filesize-receivedBytes));
+																																totalReceivedBytes += receivedBytes;
+																																// printf("Bytes received: %d, chunk of file received: %s\n\n", receivedBytes, buffer);
+																																if (fwrite(buffer, sizeof(char), receivedBytes, fp) < receivedBytes) {
+																																								// TODO: how to handle this failure. server won't know this occured and could be left sending/reading
+																																								printf("Writing to file error!\n");
+																																}
+																																bzero((char*)&buffer, sizeof(buffer));
+																								}
+																								long time_end = getMicrotime();
 
-			fflush(fp);
+																								//Calculation of Throughput
+																								long diff = time_end - time_start;
+																								float diff_s = (float)diff * 0.000001;
+																								float megabytes = (float) totalReceivedBytes * 0.000001;
+																								float throughput = megabytes / diff_s;
 
-			// Calculate md5hash
-			char calculatedMd5sum[MD5SUM_LENGTH + 1]; // buffer to hold actual sum
-			bzero(calculatedMd5sum, sizeof(calculatedMd5sum));
-			char cmd[7 + strlen(filename) + 1]; // buffer to hold command for linux command
+																								fclose(fp);
 
-			sprintf(cmd, "md5sum %s", filename); // put the actual command string in its buffer
+																								//fflush(fp);
 
-			FILE *p = popen(cmd, "r");
-			if (p == NULL){
-				printf("ERROR: Error calculating md5sum\n");
-				// TODO: how should we return from here? maybe we just dont error check
-			}
-			// fetch the results of the command
-			int i, ch;
-			for (i = 0; i < 32 && isxdigit(ch = fgetc(p)); i++) {
-					calculatedMd5sum[i] = ch;
-			}
+																								// Calculate md5hash
+																								char calculatedMd5sum[MD5SUM_LENGTH + 1]; // buffer to hold actual sum
+																								bzero(calculatedMd5sum, sizeof(calculatedMd5sum));
+																								char cmd[7 + strlen(filename) + 1]; // buffer to hold command for linux command
 
-			calculatedMd5sum[MD5SUM_LENGTH] = '\0';
+																								sprintf(cmd, "md5sum %s", filename); // put the actual command string in its buffer
 
-			pclose(p);
+																								FILE *p = popen(cmd, "r");
+																								if (p == NULL) {
+																																printf("Error calculating md5sum\n");
+																																// TODO: how should we return from here? maybe we just dont error check
+																								}
+																								// fetch the results of the command
+																								int i, ch;
+																								for (i = 0; i < 32 && isxdigit(ch = fgetc(p)); i++) {
+																																calculatedMd5sum[i] = ch;
+																								}
 
-			// Compare md5hash
-			printf("Calculated md5sum does%s match recieved md5sum\nDownload %ssuccessful!\n", \
-			(strcmp(receiveMd5sum, calculatedMd5sum) == 0) ? "" : "n't", \
-			(strcmp(receiveMd5sum, calculatedMd5sum) == 0) ? "" : "not "
-			);
+																								calculatedMd5sum[MD5SUM_LENGTH] = '\0';
 
-			printf("%d bytes transferred in %f seconds: %f MegaBytes\\sec.\n", receivedBytes, diff_s, throughput);
-			printf("MD5Hash: %s (%s)\n", calculatedMd5sum, (strcmp(receiveMd5sum, calculatedMd5sum) == 0) ? "matches" : "doesn't match");
-		}
-	}
+																								pclose(p);
+
+																								// Output data transfer
+																								printf("%d bytes transferred in %f seconds: %f MegaBytes\\sec.\n", receivedBytes, diff_s, throughput); //TODO: error here. got nan instead of a number for throughput when downloading medium file
+
+																								// Compare md5hash
+																								printf("MD5Hash: %s (%s)\n", calculatedMd5sum, (strcmp(receiveMd5sum, calculatedMd5sum) == 0) ? "matches" : "doesn't match");
+																}
+								}
 }
 
 void upld_handler(int clientSocket){
-	printf("within udld Handler\n");
-	// Get file name and size
-	char* filename = strtok(NULL, " ");
+								// Get file name and size
+								char* filename = strtok(NULL, " ");
 
-	printf("sending file name length\n");
-	// Send length of filename (short int)
-	send_int(strlen(filename), clientSocket);
+								if (filename == NULL) {
+																printf("Improper use of command. Need to include a file name\n");
+																// TODO: handle error. should we exit?
 
-	// Send filename (string)
-	printf("sending filename\n");
-	send_buffer(clientSocket, filename, strlen(filename));
+								}
 
-	// Wait for server acknowledgment
-	printf("awaiting acknowledgment\n");
-	receive_int(clientSocket);
-	printf("got acknowledgment\n");
+								// Send length of filename (int)
+								send_int(strlen(filename), clientSocket);
 
-	// Check if file already exists
-	struct stat st;
+								// Send filename (string)
+								send_buffer(clientSocket, filename, strlen(filename));
 
-	if (stat(filename, &st) == 0 && S_ISREG(st.st_mode)) {
-		// Send file size
-		printf("sending file size\n");
-		int fileSize = st.st_size;
-		int sent_size = send_int(fileSize, clientSocket);
+								// Wait for server acknowledgment
+								receive_int(clientSocket);
 
-		// Send the actual file
-		FILE *fp = fopen(filename, "r");
-		char buffer[MAX_BUFFER_SIZE + 1];
-		bzero(buffer, sizeof(buffer));
+								// Check if file already exists
+								struct stat st;
 
-		// Send file in chunks of MAX_BUFFER_SIZE
-		printf("sending file data\n");
-		int sentBytes = 0;
-		while(sentBytes < fileSize){
-			int bytesRead = fread(buffer, sizeof(char), MAX_BUFFER_SIZE, fp);
-			sentBytes += send_buffer(clientSocket, buffer, bytesRead);
-			printf("sent %d bytes so far\n", sentBytes);
-			bzero(buffer, sizeof(buffer));
-		}
-		printf("done sending bytes: sent %d\n", sentBytes);
+								if (stat(filename, &st) == 0 && S_ISREG(st.st_mode)) {
+																// Send file size
+																int fileSize = st.st_size;
+																int sent_size = send_int(fileSize, clientSocket);
 
-		// Receive throughput
-		double throughput;
-		int len;
-		printf("waiting for throughput\n");
-		if ((len = read(clientSocket, &throughput, sizeof(throughput))) == -1) {
-			perror("ERROR: Client Receive\n");
-			exit(1);
-		}
+																// Send the actual file
+																FILE *fp = fopen(filename, "r");
+																char buffer[MAX_BUFFER_SIZE + 1];
+																bzero(buffer, sizeof(buffer));
 
-		// Receive time
-		double diff_s;
-		printf("waiting for throughput\n");
-		if ((len = read(clientSocket, &diff_s, sizeof(diff_s))) == -1)
-		{
-			perror("ERROR: Client Receive\n");
-			exit(1);
-		}
+																// Send file in chunks of MAX_BUFFER_SIZE
+																int sentBytes = 0;
+																while(sentBytes < fileSize) {
+																								int bytesRead = fread(buffer, sizeof(char), MAX_BUFFER_SIZE, fp);
+																								sentBytes += send_buffer(clientSocket, buffer, bytesRead);
+																								bzero(buffer, sizeof(buffer));
+																}
 
-		printf("got throughput: %d\n",throughput);
-		// TODO: do something with throughput
+																// Receive throughput
+																double throughput;
+																int len;
+																if ((len = read(clientSocket, &throughput, sizeof(throughput))) == -1) {
+																								perror("Client Receive\n"); //TODO: fix this error statement to something descriptive
+																								exit(1);
+																}
 
-		// Receive md5sum
+																// Receive time
+																double diff_s;
+																if ((len = read(clientSocket, &diff_s, sizeof(diff_s))) == -1)
+																{
+																								perror("Client Receive\n");//TODO: fix this error statement to something descriptive
+																								exit(1);
+																}
 
-		char receiveMd5sum[MD5SUM_LENGTH + 1];
-		bzero(receiveMd5sum, sizeof(receiveMd5sum));
-		receive_buffer(clientSocket, receiveMd5sum, MD5SUM_LENGTH);
-		printf("got md5sum from server: %s\n", receiveMd5sum);
+																// Receive md5sum
+																char receiveMd5sum[MD5SUM_LENGTH + 1];
+																bzero(receiveMd5sum, sizeof(receiveMd5sum));
+																receive_buffer(clientSocket, receiveMd5sum, MD5SUM_LENGTH);
 
-		// Calculate md5hash
-		char calculatedMd5sum[MD5SUM_LENGTH + 1]; // buffer to hold actual sum
-		bzero(calculatedMd5sum, sizeof(calculatedMd5sum));
-		char cmd[7 + strlen(filename) + 1]; // buffer to hold command for linux command
+																// Calculate md5hash
+																char calculatedMd5sum[MD5SUM_LENGTH + 1]; // buffer to hold actual sum
+																bzero(calculatedMd5sum, sizeof(calculatedMd5sum));
+																char cmd[7 + strlen(filename) + 1]; // buffer to hold command for linux command
 
-		sprintf(cmd, "md5sum %s", filename); // put the actual command string in its buffer
+																sprintf(cmd, "md5sum %s", filename); // put the actual command string in its buffer
 
-		FILE *p = popen(cmd, "r");
-		if (p == NULL){
-			printf("ERROR: Error calculating md5sum\n");
-			// TODO: how should we return from here? maybe we just dont error check
-		}
-		// fetch the results of the command
-		int i, ch;
-		for (i = 0; i < 32 && isxdigit(ch = fgetc(p)); i++) {
-				calculatedMd5sum[i] = ch;
-		}
+																FILE *p = popen(cmd, "r");
+																if (p == NULL) {
+																								printf("Error calculating md5sum\n");
+																								// TODO: how should we return from here? maybe we just dont error check
+																}
+																// fetch the results of the command
+																int i, ch;
+																for (i = 0; i < 32 && isxdigit(ch = fgetc(p)); i++) {
+																								calculatedMd5sum[i] = ch;
+																}
 
-		calculatedMd5sum[MD5SUM_LENGTH] = '\0';
+																calculatedMd5sum[MD5SUM_LENGTH] = '\0';
+																printf("Calculated: %s\n", calculatedMd5sum);
+																pclose(p);
 
-		pclose(p);
-		printf("calculated md5sum as: %s\n", calculatedMd5sum);
-
-		if (strcmp(receiveMd5sum, calculatedMd5sum) == 0) {
-			printf("Transfer success!\n");
-			printf("%d bytes transferred in %f seconds: %f Megabytes/sec\n", fileSize, diff_s, throughput);
-			printf("MD5Hash: %s (%s)\n", calculatedMd5sum, (strcmp(receiveMd5sum, calculatedMd5sum) == 0) ? "matches" : "doesn't match");
-		} else {
-			printf("Transfer failed.\n");
-		}
+																if (strcmp(receiveMd5sum, calculatedMd5sum) == 0) {
+																								printf("%d bytes transferred in %f seconds: %f Megabytes/sec\n", fileSize, diff_s, throughput);
+																								printf("\tMD5Hash: %s (%s)\n", calculatedMd5sum, (strcmp(receiveMd5sum, calculatedMd5sum) == 0) ? "matches" : "doesn't match");
+																} else {
+																								printf("Transfer failed.\n");
+																}
 
 
-	} else {
-		// TODO: WHAT TO DO HERE (file DNE)
-	}
-	return;
+								} else {
+																// TODO: WHAT TO DO HERE (file DNE)
+								}
+								return;
 }
