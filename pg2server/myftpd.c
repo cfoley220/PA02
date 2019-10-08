@@ -13,15 +13,6 @@
  * a handler for each opeartion. The server loops as to allow multiple operations to be called. It does not allow multiple clients.
  */
 
-/* TODO LIST
-   - handle errors better (not just exit. part of the project rubric. ASK TA)
-   - catch ^C (ASK TA)
-   - write what does getMicrotime() do in comment
-   - spell check entire file
-   - timing and throughput stuff
-   - in UPLD, check if the file exists before uploading it/opening it
- */
-
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -56,7 +47,7 @@ void upld_handler(int);
 /*
  * getMicrotime()
  *
- * TODO: what does this do
+ * This function gets the current time in milliseconds
  */
 static long getMicrotime() {
         struct timeval currentTime;
@@ -134,8 +125,6 @@ int main(int argc, char* argv[]) {
         }
 
         int port = atoi(argv[1]);
-
-        // signal (SIGINT, my_handler); // TODO this shit. ask TA
 
         /* Initialize variables */
         int sockfd, clientAddrLen;
@@ -223,8 +212,7 @@ int main(int argc, char* argv[]) {
                 }
                 // Default case
                 else {
-                        printf("Received unknown command\n");
-                        // TODO: Handle this
+                      printf("Received unknown command\n");
                 }
 
                 memset(buf, 0, sizeof(buf));
@@ -455,7 +443,7 @@ void dnld_handler(int clientSocket){
                 FILE *p = popen(cmd, "r");
                 if (p == NULL) {
                         printf("ERROR: Error calculating md5sum\n");
-                        // TODO: how should we return from here? maybe we just dont error check
+                        exit(1);
                 }
                 // fetch the results of the command
                 int i, ch;
@@ -504,12 +492,17 @@ void upld_handler(int clientSocket){
         // Receive file size
         int file_size = receive_int(clientSocket);
 
+        // Stop processes if file DNE
+        if (file_size == -1) {
+          return;
+        }
+
         // Create file
         FILE *fp = fopen(fileBuffer, "w");
 
         if (fp == NULL) {
                 printf("ERROR: Failed to create file.\n");
-                // TODO: what to do with this failure? server won't know this occured and could be left sending/reading
+                exit(1);
         } else {
                 // Recieve file data
                 int totalReceivedBytes = 0;
@@ -518,19 +511,14 @@ void upld_handler(int clientSocket){
                 long time_start = getMicrotime();
                 while(totalReceivedBytes < file_size) {
                         bzero(buffer, sizeof(buffer));
-                        // TODO: Bailey: START TIMER FOR THROUGHPUT HERE (accumulate each loop)
-                        // there is a hint in the instructions on how to do this
+
                         receivedBytes = receive_buffer(clientSocket, buffer, MIN(MAX_BUFFER_SIZE,file_size-receivedBytes));
 
                         totalReceivedBytes += receivedBytes;
-                        // TODO: Bailey: STOP TIMER FOR THROUGHPUT HERE AND
-                        // use receivedBytes for size in calculation
-                        //
-                        // the reason for this placement is to time only the recieveing, and not the disk writing
 
                         if (fwrite(buffer, sizeof(char), receivedBytes, fp) < receivedBytes) {
-                                // TODO: how to handle this failure. server won't know this occured and could be left sending/reading
                                 printf("ERROR: Writing to file error!\n");
+                                exit(1);
                         }
                 }
                 fclose(fp);
@@ -553,7 +541,7 @@ void upld_handler(int clientSocket){
                 FILE *p = popen(cmd, "r");
                 if (p == NULL) {
                         printf("ERROR: Error calculating md5sum\n");
-                        // TODO: how should we return from here? maybe we just dont error check
+                        exit(1);
                 }
                 // fetch the results of the command
                 int i, ch;

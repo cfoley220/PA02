@@ -15,15 +15,7 @@
  */
 
 /* TODO LIST
-   - catch ^C and send message to server to shut it down  (ASK TA)
-   - handle errors better (not just exit. part of the project rubric. ASK TA)
-   - write what does getMicrotime() do in comment
-   - timing/throughput gives 0 and nan results most times. unsure why
-   - spell check entire file
-
-   non-file specific items
    - make README
-   - test on multiple student machines
    - create zipped file
  */
 
@@ -56,7 +48,7 @@ void upld_handler(int);
 /*
  * getMicrotime()
  *
- * TODO: what does this do
+ * This function gets the current time in milliseconds
  */
 static long getMicrotime() {
 	struct timeval currentTime;
@@ -153,6 +145,7 @@ int main(int argc, char *argv[]) {
 	servaddr.sin_port = htons(port);
 
 	// connect
+	printf("Welcome to our client!\n");
 	printf("Connection to %s on port %d\n", argv[1], port);
 	if (connect(clientSocket, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
 		printf("Client: Error connecting to server: %s\n", strerror(errno));
@@ -260,7 +253,7 @@ void mkdr_handler(int clientSocket) {
 
 	if (directory == NULL) {
 		printf("Improper use of command. Need to include a directory\n");
-		// TODO: handle error. should we exit?
+		exit(1);
 	}
 
 	// Send length of directory name (int)
@@ -290,7 +283,7 @@ void rmdr_handler(int clientSocket){
 
 	if (directory == NULL) {
 		printf("Improper use of command. Need to include a file name\n");
-		// TODO: handle error. should we exit?
+		exit(1);
 	}
 
 	// Send length of directory name (int)
@@ -357,7 +350,7 @@ void chdr_handler(int clientSocket){
 
 	if (directory == NULL) {
 		printf("Improper use of command. Need to include a file name\n");
-		// TODO: handle error. should we exit?
+		exit(1);
 	}
 
 	// Send length of directory name (int)
@@ -386,7 +379,7 @@ void crfl_handler(int clientSocket) {
 
 	if (filename == NULL) {
 		printf("Improper use of command. Need to include a file name\n");
-		// TODO: handle error. should we exit?
+		exit(1);
 	}
 
 	// Send length of directory name (int)
@@ -413,7 +406,7 @@ void rmfl_handler(int clientSocket) {
 
 	if (filename == NULL) {
 		printf("Improper use of command. Need to include a file name\n");
-		// TODO: handle error. should we exit?
+		exit(1);
 	}
 
 
@@ -473,7 +466,7 @@ void dnld_handler(int clientSocket){
 
 	if (filename == NULL) {
 		printf("Improper use of command. Need to include a file name\n");
-		// TODO: handle error. should we exit?
+		exit(1);
 
 	}
 
@@ -485,7 +478,6 @@ void dnld_handler(int clientSocket){
 
 	// Recieve status update and inform user
 	int status = receive_int(clientSocket);
-	printf("    \n"); // TODO: wow.
 
 	if (status == -1) {
 		printf("File %s does not exist on server.\n", filename);
@@ -504,7 +496,7 @@ void dnld_handler(int clientSocket){
 
 		if (fp == NULL) {
 			printf("Failed to create file.\n");
-			// TODO: what to do with this failure? server won't know this occured and could be left sending/reading
+			exit(1);
 		} else {
 
 			// Recieve file data
@@ -513,40 +505,26 @@ void dnld_handler(int clientSocket){
 			char buffer[MAX_BUFFER_SIZE];
 			bzero((char*)&buffer, sizeof(buffer));
 			long time_start = getMicrotime();
-			//printf("%lu\n", time_start);
-			//clock_t start, end;
-			//double cpu_time_used;
-			//start = clock();
-			//printf("%d\n", filesize);
 			while(totalReceivedBytes < filesize) {
-				//printf("HERE--------------\n");
 				receivedBytes = receive_buffer(clientSocket, buffer, MIN(MAX_BUFFER_SIZE,filesize-receivedBytes));
 				totalReceivedBytes += receivedBytes;
-				// printf("Bytes received: %d, chunk of file received: %s\n\n", receivedBytes, buffer);
 				if (fwrite(buffer, sizeof(char), receivedBytes, fp) < receivedBytes) {
-					// TODO: how to handle this failure. server won't know this occured and could be left sending/reading
 					printf("Writing to file error!\n");
+					exit(1);
 				}
 				bzero((char*)&buffer, sizeof(buffer));
 			}
 			long time_end = getMicrotime();
-			
-			//end = clock();
-			//printf("%Lf\n", (long double)end - start);
-			//cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
 
 			// Calculate throughput
 			long diff = time_end - time_start;
 			double diff_s = (double)diff * 0.000001;
-			//double diff_s = cpu_time_used * 0.000001;
 
 			double megabytes = (double)receivedBytes * 0.000001;
 
 			double throughput = megabytes / diff_s;
 
 			fclose(fp);
-
-			//fflush(fp);
 
 			// Calculate md5hash
 			char calculatedMd5sum[MD5SUM_LENGTH + 1]; // buffer to hold actual sum
@@ -558,7 +536,7 @@ void dnld_handler(int clientSocket){
 			FILE *p = popen(cmd, "r");
 			if (p == NULL) {
 				printf("Error calculating md5sum\n");
-				// TODO: how should we return from here? maybe we just dont error check
+				exit(1);
 			}
 			// fetch the results of the command
 			int i, ch;
@@ -571,7 +549,7 @@ void dnld_handler(int clientSocket){
 			pclose(p);
 
 			// Output data transfer
-			printf("%d bytes transferred in %f seconds: %f MegaBytes\\sec.\n", totalReceivedBytes, diff_s, throughput); //TODO: error here. got nan instead of a number for throughput when downloading medium file
+			printf("%d bytes transferred in %f seconds: %f MegaBytes\\sec.\n", totalReceivedBytes, diff_s, throughput);
 
 			// Compare md5hash
 			printf("MD5Hash: %s (%s)\n", calculatedMd5sum, (strcmp(receiveMd5sum, calculatedMd5sum) == 0) ? "matches" : "doesn't match");
@@ -585,8 +563,7 @@ void upld_handler(int clientSocket){
 
 	if (filename == NULL) {
 		printf("Improper use of command. Need to include a file name\n");
-		// TODO: handle error. should we exit?
-
+		exit(1);
 	}
 
 	// Send length of filename (int)
@@ -623,7 +600,7 @@ void upld_handler(int clientSocket){
 		double throughput;
 		int len;
 		if ((len = read(clientSocket, &throughput, sizeof(throughput))) == -1) {
-			perror("Client Receive\n"); //TODO: fix this error statement to something descriptive
+			perror("Failure to read from TCP socket.\n");
 			exit(1);
 		}
 
@@ -631,7 +608,7 @@ void upld_handler(int clientSocket){
 		double diff_s;
 		if ((len = read(clientSocket, &diff_s, sizeof(diff_s))) == -1)
 		{
-			perror("Client Receive\n");//TODO: fix this error statement to something descriptive
+			perror("Failure to read from TCP socket.\n");
 			exit(1);
 		}
 
@@ -650,7 +627,7 @@ void upld_handler(int clientSocket){
 		FILE *p = popen(cmd, "r");
 		if (p == NULL) {
 			printf("Error calculating md5sum\n");
-			// TODO: how should we return from here? maybe we just dont error check
+			exit(1);
 		}
 		// fetch the results of the command
 		int i, ch;
@@ -669,9 +646,10 @@ void upld_handler(int clientSocket){
 			printf("Transfer failed.\n");
 		}
 
+	} else {
+		send_int(-1, clientSocket);
+		printf("File does not exist.\n");
+	}
 
-		} else {
-			// TODO: WHAT TO DO HERE (file DNE)
-		}
-		return;
+	return;
 }
