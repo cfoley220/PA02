@@ -38,6 +38,7 @@
 #include <netinet/in.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include <time.h>
 
 #define MAX_BUFFER_SIZE 4096
 #define MD5SUM_LENGTH 32
@@ -512,7 +513,13 @@ void dnld_handler(int clientSocket){
 			char buffer[MAX_BUFFER_SIZE];
 			bzero((char*)&buffer, sizeof(buffer));
 			long time_start = getMicrotime();
+			//printf("%lu\n", time_start);
+			//clock_t start, end;
+			//double cpu_time_used;
+			//start = clock();
+			//printf("%d\n", filesize);
 			while(totalReceivedBytes < filesize) {
+				//printf("HERE--------------\n");
 				receivedBytes = receive_buffer(clientSocket, buffer, MIN(MAX_BUFFER_SIZE,filesize-receivedBytes));
 				totalReceivedBytes += receivedBytes;
 				// printf("Bytes received: %d, chunk of file received: %s\n\n", receivedBytes, buffer);
@@ -523,12 +530,19 @@ void dnld_handler(int clientSocket){
 				bzero((char*)&buffer, sizeof(buffer));
 			}
 			long time_end = getMicrotime();
+			
+			//end = clock();
+			//printf("%Lf\n", (long double)end - start);
+			//cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
 
-			//Calculation of Throughput
+			// Calculate throughput
 			long diff = time_end - time_start;
-			float diff_s = (float)diff * 0.000001;
-			float megabytes = (float) totalReceivedBytes * 0.000001;
-			float throughput = megabytes / diff_s;
+			double diff_s = (double)diff * 0.000001;
+			//double diff_s = cpu_time_used * 0.000001;
+
+			double megabytes = (double)receivedBytes * 0.000001;
+
+			double throughput = megabytes / diff_s;
 
 			fclose(fp);
 
@@ -557,7 +571,7 @@ void dnld_handler(int clientSocket){
 			pclose(p);
 
 			// Output data transfer
-			printf("%d bytes transferred in %f seconds: %f MegaBytes\\sec.\n", receivedBytes, diff_s, throughput); //TODO: error here. got nan instead of a number for throughput when downloading medium file
+			printf("%d bytes transferred in %f seconds: %f MegaBytes\\sec.\n", totalReceivedBytes, diff_s, throughput); //TODO: error here. got nan instead of a number for throughput when downloading medium file
 
 			// Compare md5hash
 			printf("MD5Hash: %s (%s)\n", calculatedMd5sum, (strcmp(receiveMd5sum, calculatedMd5sum) == 0) ? "matches" : "doesn't match");
